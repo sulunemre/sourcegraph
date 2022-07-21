@@ -50,6 +50,9 @@ const (
 	ExternalServicesList   = "internal.external-services.list"
 	StreamingSearch        = "internal.stream-search"
 	Checks                 = "internal.checks"
+	ServiceRegister        = "internal.service.register"
+	ServiceRenew           = "internal.service.renew"
+	ServiceDeregister      = "internal.service.deregister"
 )
 
 // New creates a new API router with route URL pattern definitions but
@@ -118,6 +121,15 @@ func NewInternal(base *mux.Router) *mux.Router {
 	base.Path("/search/stream").Methods("GET").Name(StreamingSearch)
 	base.Path("/compute/stream").Methods("GET", "POST").Name(ComputeStream)
 	base.Path("/checks").Methods("GET").Name(Checks)
+
+	// service registry
+	//
+	// instanceID is a unique id for each instance of a service. The instanceID is
+	// returned by POST when the instance registers.
+	base.Path("/services/{name}").Methods("POST").Name(ServiceRegister)
+	base.Path("/services/{name}/{instanceID}").Methods("PUT").Name(ServiceRenew)
+	base.Path("/services/{name}/{instanceID}").Methods("DELETE").Name(ServiceDeregister)
+
 	addRegistryRoute(base)
 	addGraphQLRoute(base)
 

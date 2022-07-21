@@ -4,8 +4,10 @@ import (
 	"context"
 	"encoding/json"
 	"net/http"
+	"net/netip"
 	"net/url"
 	"path"
+	"strings"
 
 	"github.com/gorilla/mux"
 	"github.com/inconshreveable/log15"
@@ -17,6 +19,7 @@ import (
 	"github.com/sourcegraph/sourcegraph/internal/api"
 	"github.com/sourcegraph/sourcegraph/internal/conf"
 	"github.com/sourcegraph/sourcegraph/internal/database"
+	"github.com/sourcegraph/sourcegraph/internal/errcode"
 	"github.com/sourcegraph/sourcegraph/internal/gitserver"
 	"github.com/sourcegraph/sourcegraph/internal/jsonc"
 	"github.com/sourcegraph/sourcegraph/internal/txemail"
@@ -308,4 +311,79 @@ func handlePing(w http.ResponseWriter, r *http.Request) {
 	}
 
 	_, _ = w.Write([]byte("pong"))
+}
+
+func newServiceRegisterHandler(db database.DB) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ip, err := ipFromRequest(r)
+		if err != nil {
+			http.Error(w, "could not extract IP address", http.StatusBadRequest)
+			return
+		}
+
+		vars := mux.Vars(r)
+
+		args := database.ServiceArgs{}
+		err = json.NewDecoder(r.Body).Decode(&args)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		// Check required args.
+		if args.Port == 0 {
+			http.Error(w, "missing port", http.StatusBadRequest)
+			return
+		}
+		args.IP = ip
+
+		id, err := db.Services().Register(r.Context(), vars["name"], args)
+		if err != nil {
+			http.Error(w, err.Error(), http.StatusInternalServerError)
+			return
+		}
+
+		w.Write([]byte(id))
+	}
+}
+
+func newServiceRenewHandler(db database.DB) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+
+		err := db.Services().Renew(r.Context(), vars["name"], vars["instanceID"])
+		if err != nil {
+			if errcode.IsNotFound(err) {
+				http.Error(w, err.Error(), http.StatusNotFound)
+			} else {
+				http.Error(w, err.Error(), http.StatusInternalServerError)
+			}
+			return
+		}
+	}
+}
+
+func newServiceDeregisterHandler(db database.DB) func(w http.ResponseWriter, r *http.Request) {
+	return func(w http.ResponseWriter, r *http.Request) {
+		vars := mux.Vars(r)
+
+		err := db.Services().Deregister(r.Context(), vars["name"], vars["instanceID"])
+		if err != nil {
+			if err != nil {
+				if errcode.IsNotFound(err) {
+					http.Error(w, err.Error(), http.StatusNotFound)
+				} else {
+					http.Error(w, err.Error(), http.StatusInternalServerError)
+				}
+				return
+			}
+		}
+	}
+}
+
+func ipFromRequest(r *http.Request) (netip.Addr, error) {
+	if v := r.Header.Get("X-Forwarded-For"); v != "" {
+		return netip.ParseAddr(strings.Split(v, ",")[0])
+	}
+	return netip.ParseAddr(strings.Split(r.RemoteAddr, ":")[0])
 }

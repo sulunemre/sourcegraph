@@ -122,6 +122,8 @@ Available commands in `sg.config.yaml`:
 * zoekt-web-0
 * zoekt-web-1
 * zoekt-web-template
+* zoekt-webserver-0
+* zoekt-webserver-1
 
 ```sh
 # Run specific commands:

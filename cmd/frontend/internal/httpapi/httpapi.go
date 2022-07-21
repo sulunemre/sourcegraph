@@ -178,6 +178,9 @@ func NewInternalHandler(m *mux.Router, db database.DB, schema *graphql.Schema, n
 	m.Get(apirouter.LSIFUpload).Handler(trace.Route(newCodeIntelUploadHandler(true)))
 
 	m.Get(apirouter.Checks).Handler(trace.Route(healthCheckHandler))
+	m.Get(apirouter.ServiceRegister).Handler(trace.Route(http.HandlerFunc(newServiceRegisterHandler(db))))
+	m.Get(apirouter.ServiceDeregister).Handler(trace.Route(http.HandlerFunc(newServiceDeregisterHandler(db))))
+	m.Get(apirouter.ServiceRenew).Handler(trace.Route(http.HandlerFunc(newServiceRenewHandler(db))))
 
 	m.NotFoundHandler = http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		log.Printf("API no route: %s %s from %s", r.Method, r.URL, r.Referer())
