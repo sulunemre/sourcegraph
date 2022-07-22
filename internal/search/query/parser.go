@@ -781,7 +781,11 @@ func (p *parser) TryParseDelimitedPattern() (Pattern, bool) {
 				labels = Literal
 			}
 		} else {
-			labels = Literal | Quoted
+			if p.leafParser == SearchTypeRegex {
+				labels = Literal | Quoted
+			} else {
+				labels = Literal
+			}
 		}
 		return newPattern(value, labels, newRange(start, p.pos)), true
 	}
