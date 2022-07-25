@@ -2,7 +2,6 @@ package resolvers
 
 import (
 	"context"
-	"fmt"
 	"sort"
 	"strings"
 	"sync"
@@ -177,7 +176,6 @@ func (i *insightViewResolver) registerDataSeriesGenerators() {
 }
 
 func (i *insightViewResolver) DataSeries(ctx context.Context) ([]graphqlbackend.InsightSeriesResolver, error) {
-	fmt.Println("DataSeries")
 	return i.computeDataSeries(ctx)
 }
 
@@ -779,7 +777,6 @@ type InsightViewQueryConnectionResolver struct {
 }
 
 func (d *InsightViewQueryConnectionResolver) Nodes(ctx context.Context) ([]graphqlbackend.InsightViewResolver, error) {
-	fmt.Println("Nodes")
 	resolvers := make([]graphqlbackend.InsightViewResolver, 0)
 	var scs []string
 

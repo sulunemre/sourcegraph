@@ -113,7 +113,6 @@ func (l *scLoader) GetByName(ctx context.Context, name string) (*sctypes.SearchC
 }
 
 func unwrapSearchContexts(ctx context.Context, loader SearchContextLoader, rawContexts []string) ([]string, []string, error) {
-	fmt.Println("unwrapSearchContexts")
 	var include []string
 	var exclude []string
 
