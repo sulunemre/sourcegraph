@@ -2860,6 +2860,20 @@ CREATE SEQUENCE security_event_logs_id_seq
 
 ALTER SEQUENCE security_event_logs_id_seq OWNED BY security_event_logs.id;
 
+CREATE TABLE service_registry (
+    ip text NOT NULL,
+    port integer NOT NULL,
+    service text NOT NULL,
+    health_check_path text NOT NULL,
+    last_heartbeat timestamp with time zone DEFAULT now()
+);
+
+COMMENT ON TABLE service_registry IS 'Records services that register with the service registry in frontend.';
+
+COMMENT ON COLUMN service_registry.health_check_path IS '(Optional) A path such that ip:port/health_check_path serves a health check';
+
+COMMENT ON COLUMN service_registry.last_heartbeat IS 'The last time the service sent a renewal request to the service registry.';
+
 CREATE TABLE settings (
     id integer NOT NULL,
     org_id integer,
@@ -3491,6 +3505,9 @@ ALTER TABLE ONLY search_contexts
 
 ALTER TABLE ONLY security_event_logs
     ADD CONSTRAINT security_event_logs_pkey PRIMARY KEY (id);
+
+ALTER TABLE ONLY service_registry
+    ADD CONSTRAINT service_registry_pkey PRIMARY KEY (ip, port);
 
 ALTER TABLE ONLY settings
     ADD CONSTRAINT settings_pkey PRIMARY KEY (id);
