@@ -54,7 +54,16 @@ INSERT INTO service_registry (service, ip, port, health_check_path)
 VALUES (%s, %s, %d, %s)`
 
 func (s servicesStore) Register(ctx context.Context, service string, args ServiceArgs) (string, error) {
-	return netip.AddrPortFrom(args.IP, args.Port).String(), s.Exec(ctx, sqlf.Sprintf(registerFmtStr, service, args.IP.String(), args.Port, args.HealthCheckPath))
+	err := s.Exec(ctx, sqlf.Sprintf(registerFmtStr, service, args.IP.String(), args.Port, args.HealthCheckPath))
+	if err != nil {
+		return "", err
+	}
+
+	// We use the combination of IP and Port as instanceID. However, the ID is
+	// arbitrary as long as it is unique for each instance. By using IP and Port we
+	// avoid storing an extra string field in the DB. The caller should treat the
+	// returned ID as random string.
+	return netip.AddrPortFrom(args.IP, args.Port).String(), nil
 }
 
 const renewFmtStr = `
