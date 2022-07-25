@@ -59,8 +59,8 @@ func (s servicesStore) Register(ctx context.Context, service string, args Servic
 		return "", err
 	}
 
-	// We use the combination of IP and Port as instanceID. However, the ID is
-	// arbitrary as long as it is unique for each instance. By using IP and Port we
+	// We use the combination of IP and port as instanceID. However, the ID is
+	// arbitrary as long as it is unique for each instance. By using IP and port we
 	// avoid storing an extra string field in the DB. The caller should treat the
 	// returned ID as random string.
 	return netip.AddrPortFrom(args.IP, args.Port).String(), nil
