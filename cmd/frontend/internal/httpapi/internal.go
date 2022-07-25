@@ -3,6 +3,7 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
+	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -343,6 +344,7 @@ func newServiceRegisterHandler(db database.DB) func(w http.ResponseWriter, r *ht
 			return
 		}
 
+		// Return ID to caller.
 		w.Write([]byte(id))
 	}
 }
@@ -382,8 +384,19 @@ func newServiceDeregisterHandler(db database.DB) func(w http.ResponseWriter, r *
 }
 
 func ipFromRequest(r *http.Request) (netip.Addr, error) {
+	// Elements in X-Forwarded-For are comma-separated IPs. The leftmost IP address
+	// is the IP address of the originating client.
 	if v := r.Header.Get("X-Forwarded-For"); v != "" {
-		return netip.ParseAddr(strings.Split(v, ",")[0])
+		i := strings.IndexByte(v, ',')
+		if i == -1 {
+			i = len(v)
+		}
+		return netip.ParseAddr(v[:i])
 	}
-	return netip.ParseAddr(strings.Split(r.RemoteAddr, ":")[0])
+
+	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	if err != nil {
+		return netip.Addr{}, err
+	}
+	return netip.ParseAddr(host)
 }

@@ -13,11 +13,12 @@ import (
 )
 
 type ServiceArgs struct {
-	// We extract the IP from the request and not from the JSON payload
+	// We ignore the IP address for JSON marshalling because we extract it from the
+	// request and not from the JSON payload.
 	IP netip.Addr `json:"-"`
 
 	// Required
-	// Port has to be >0.
+	// Valid ports are >0.
 	Port uint16 `json:"port" json:"port"`
 
 	// Optional
@@ -73,8 +74,7 @@ const deregisterFmtStr = `
 DELETE FROM service_registry
 WHERE service = %s
 AND ip = %s
-AND port = %d
-`
+AND port = %d`
 
 func (s servicesStore) Deregister(ctx context.Context, service, id string) error {
 	return s.renewOrDeregister(ctx, deregisterFmtStr, service, id)
@@ -111,8 +111,7 @@ func (e NotFoundError) NotFound() bool {
 
 const getByServiceFmtStr = `
 -- source: /internal/database/service_registry.go:GetByService
-SELECT ip, port, health_check_path FROM service_registry where service = %s
-`
+SELECT ip, port, health_check_path FROM service_registry where service = %s`
 
 func (s servicesStore) GetByService(ctx context.Context, service string) (instances []ServiceArgs, err error) {
 	rows, err := s.Query(ctx, sqlf.Sprintf(getByServiceFmtStr, service))
