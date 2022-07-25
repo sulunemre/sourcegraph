@@ -3,7 +3,6 @@ package httpapi
 import (
 	"context"
 	"encoding/json"
-	"net"
 	"net/http"
 	"net/netip"
 	"net/url"
@@ -394,9 +393,9 @@ func ipFromRequest(r *http.Request) (netip.Addr, error) {
 		return netip.ParseAddr(v[:i])
 	}
 
-	host, _, err := net.SplitHostPort(r.RemoteAddr)
+	addrPort, err := netip.ParseAddrPort(r.RemoteAddr)
 	if err != nil {
 		return netip.Addr{}, err
 	}
-	return netip.ParseAddr(host)
+	return addrPort.Addr(), nil
 }
