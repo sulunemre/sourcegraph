@@ -113,15 +113,14 @@ func (l *scLoader) GetByName(ctx context.Context, name string) (*sctypes.SearchC
 }
 
 func unwrapSearchContexts(ctx context.Context, loader SearchContextLoader, rawContexts []string) ([]string, []string, error) {
+	fmt.Println("unwrapSearchContexts")
 	var include []string
 	var exclude []string
 
 	for _, rawContext := range rawContexts {
 		searchContext, err := loader.GetByName(ctx, rawContext)
 		if err != nil {
-			// If this search context cannot load, we will skip it. This is a temporary measure because our
-			// resolver chain doesn't handle / propagate errors correctly. https://github.com/sourcegraph/sourcegraph/issues/38951#issuecomment-1187915821
-			continue
+			return nil, nil, err
 		}
 		if searchContext.Query != "" {
 			var plan searchquery.Plan
@@ -129,9 +128,7 @@ func unwrapSearchContexts(ctx context.Context, loader SearchContextLoader, rawCo
 				searchquery.Init(searchContext.Query, searchquery.SearchTypeRegex),
 			)
 			if err != nil {
-				// If this search context cannot parse, we will skip it. This is a temporary measure because our
-				// resolver chain doesn't handle / propagate errors correctly. https://github.com/sourcegraph/sourcegraph/issues/38951#issuecomment-1187915821
-				continue
+				return nil, nil, errors.Wrapf(err, "failed to parse search query for search context: %s", rawContext)
 			}
 			inc, exc := plan.ToQ().Repositories()
 			include = append(include, inc...)
