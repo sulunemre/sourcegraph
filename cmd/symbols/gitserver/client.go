@@ -8,7 +8,6 @@ import (
 	"github.com/opentracing/opentracing-go/log"
 
 	"github.com/sourcegraph/sourcegraph/internal/api"
-	"github.com/sourcegraph/sourcegraph/internal/database"
 	"github.com/sourcegraph/sourcegraph/internal/gitserver"
 	"github.com/sourcegraph/sourcegraph/internal/gitserver/gitdomain"
 	"github.com/sourcegraph/sourcegraph/internal/observation"
@@ -23,9 +22,6 @@ type GitserverClient interface {
 
 	// GitDiff returns the paths that have changed between two commits.
 	GitDiff(context.Context, api.RepoName, api.CommitID, api.CommitID) (Changes, error)
-
-	// GetRepoSize returns the repo size in bytes.
-	GetRepoSize(context.Context, api.RepoName) (int64, error)
 }
 
 // Changes are added, deleted, and modified paths.
@@ -36,7 +32,8 @@ type Changes struct {
 }
 
 type gitserverClient struct {
-	db         database.DB
+	// TODO: Never set.
+	// db         database.DB
 	operations *operations
 }
 
@@ -66,7 +63,7 @@ func (c *gitserverClient) FetchTar(ctx context.Context, repo api.RepoName, commi
 	}
 
 	// Note: the sub-repo perms checker is nil here because we do the sub-repo filtering at a higher level
-	return gitserver.NewClient(c.db).ArchiveReader(ctx, nil, repo, opts)
+	return gitserver.NewClient(nil).ArchiveReader(ctx, nil, repo, opts)
 }
 
 func (c *gitserverClient) GitDiff(ctx context.Context, repo api.RepoName, commitA, commitB api.CommitID) (_ Changes, err error) {
@@ -77,7 +74,7 @@ func (c *gitserverClient) GitDiff(ctx context.Context, repo api.RepoName, commit
 	}})
 	defer endObservation(1, observation.Args{})
 
-	output, err := gitserver.NewClient(c.db).DiffSymbols(ctx, repo, commitA, commitB)
+	output, err := gitserver.NewClient(nil).DiffSymbols(ctx, repo, commitA, commitB)
 
 	changes, err := parseGitDiffOutput(output)
 	if err != nil {
@@ -85,18 +82,6 @@ func (c *gitserverClient) GitDiff(ctx context.Context, repo api.RepoName, commit
 	}
 
 	return changes, nil
-}
-
-func (c *gitserverClient) GetRepoSize(ctx context.Context, repo api.RepoName) (int64, error) {
-	repoToInfo, err := gitserver.NewClient(c.db).RepoInfo(ctx, repo)
-	if err != nil {
-		return 0, err
-	}
-	info := repoToInfo.Results[repo]
-	if info == nil {
-		return 0, errors.Errorf("repo %q not found", repo)
-	}
-	return info.Size, nil
 }
 
 var NUL = []byte{0}
