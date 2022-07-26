@@ -89,7 +89,7 @@ func (s *Syncer) Run(ctx context.Context, store Store, opts RunOptions) error {
 		s.initialUnmodifiedDiffFromStore(ctx, store)
 	}
 
-	syncWorker, syncResetter := NewSyncWorker(ctx, store.Handle(), &syncHandler{
+	syncWorker, syncResetter := NewSyncWorker(ctx, s.Logger, store.Handle(), &syncHandler{
 		syncer:          s,
 		store:           store,
 		minSyncInterval: opts.MinSyncInterval,
@@ -625,7 +625,7 @@ func (s *Syncer) SyncExternalService(
 	// Organization owned external services are always considered allowed.
 	allowed := func(*types.Repo) bool { return true }
 	if svc.NamespaceUserID != 0 {
-		if mode, err := database.UsersWith(s.Store).UserAllowedExternalServices(ctx, svc.NamespaceUserID); err != nil {
+		if mode, err := database.UsersWith(s.Logger, s.Store).UserAllowedExternalServices(ctx, svc.NamespaceUserID); err != nil {
 			return errors.Wrap(err, "checking if user can add private code")
 		} else if mode != conf.ExternalServiceModeAll {
 			allowed = func(r *types.Repo) bool { return !r.Private }

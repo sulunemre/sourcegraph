@@ -5,7 +5,6 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 
-	"github.com/sourcegraph/log"
 	"github.com/sourcegraph/log/logtest"
 
 	"github.com/sourcegraph/sourcegraph/internal/database"
@@ -25,6 +24,7 @@ func TestIntegration(t *testing.T) {
 		t.Skip()
 	}
 
+	logger := logtest.Scoped(t)
 	// t.Parallel()
 
 	for _, tc := range []struct {
@@ -55,7 +55,7 @@ func TestIntegration(t *testing.T) {
 		{"Syncer/SyncReposWithLastErrorsHitRateLimit", testSyncReposWithLastErrorsHitsRateLimiter},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			store := repos.NewStore(logtest.Scoped(t), database.NewDB(dbtest.NewDB(t)))
+			store := repos.NewStore(logtest.Scoped(t), database.NewDB(logger, dbtest.NewDB(logger, t)))
 
 			store.SetMetrics(repos.NewStoreMetrics())
 			store.SetTracer(trace.Tracer{Tracer: opentracing.GlobalTracer()})
@@ -70,6 +70,7 @@ func TestIntegration_WebhookBuilder(t *testing.T) {
 		t.Skip()
 	}
 
+	logger := logtest.Scoped(t)
 	// t.Parallel()
 
 	for _, tc := range []struct {
@@ -79,7 +80,7 @@ func TestIntegration_WebhookBuilder(t *testing.T) {
 		{"WebhookBuilder", testWebhookBuilder},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			db := database.NewDB(dbtest.NewDB(log.Scoped(t)))
+			db := database.NewDB(logger, dbtest.NewDB(logger, t))
 			store := repos.NewStore(logtest.Scoped(t), db)
 
 			store.SetMetrics(repos.NewStoreMetrics())

@@ -33,7 +33,6 @@ import (
 	"github.com/sourcegraph/sourcegraph/internal/extsvc"
 	"github.com/sourcegraph/sourcegraph/internal/extsvc/auth"
 	"github.com/sourcegraph/sourcegraph/internal/extsvc/github"
-	"github.com/sourcegraph/sourcegraph/internal/gitserver"
 	"github.com/sourcegraph/sourcegraph/internal/httpcli"
 	"github.com/sourcegraph/sourcegraph/internal/httpserver"
 	"github.com/sourcegraph/sourcegraph/internal/httptestutil"
@@ -205,10 +204,10 @@ func testWebhookBuilder(store repos.Store, db database.DB) func(*testing.T) {
 		// setting up the internal server
 		// that repoupdater listens to
 		server := &repoupdater.Server{
-			Logger:                logger,
-			Store:                 store,
-			Scheduler:             repos.NewUpdateScheduler(logger, db),
-			GitserverClient:       gitserver.NewClient(db),
+			Logger:    logger,
+			Store:     store,
+			Scheduler: repos.NewUpdateScheduler(logger, db),
+			// GitserverClient:       gitserver.NewClient(db),
 			SourcegraphDotComMode: envvar.SourcegraphDotComMode(),
 			RateLimitSyncer:       repos.NewRateLimitSyncer(ratelimit.DefaultRegistry, store.ExternalServiceStore(), repos.RateLimitSyncerOpts{}),
 		}
