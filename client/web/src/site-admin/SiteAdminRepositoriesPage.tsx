@@ -69,9 +69,7 @@ const RepositoryNode: React.FunctionComponent<React.PropsWithChildren<Repository
             <div className={styles.alertWrapper}>
                 <Alert variant="warning">
                     <Text className="font-weight-bold">Error updating repo:</Text>
-                    <TerminalLine>
-                        {node.mirrorInfo.lastError}
-                    </TerminalLine>
+                    <TerminalLine>{node.mirrorInfo.lastError}</TerminalLine>
                 </Alert>
             </div>
         )}
