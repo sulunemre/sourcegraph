@@ -143,11 +143,8 @@ func TestCreateBatchSpec(t *testing.T) {
 	changesetSpecs := make([]*btypes.ChangesetSpec, maxUnlicensedChangesets+1)
 	for i := range changesetSpecs {
 		changesetSpecs[i] = &btypes.ChangesetSpec{
-			Spec: &batcheslib.ChangesetSpec{
-				BaseRepository: string(graphqlbackend.MarshalRepositoryID(repo.ID)),
-			},
-			RepoID: repo.ID,
-			UserID: userID,
+			BaseRepoID: repo.ID,
+			UserID:     userID,
 		}
 		if err := cstore.CreateChangesetSpec(ctx, changesetSpecs[i]); err != nil {
 			t.Fatal(err)
@@ -359,7 +356,7 @@ func TestCreateChangesetSpec(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if have, want := cs.RepoID, repo.ID; have != want {
+	if have, want := cs.BaseRepoID, repo.ID; have != want {
 		t.Fatalf("wrong RepoID. want=%d, have=%d", want, have)
 	}
 }
@@ -402,8 +399,6 @@ func TestApplyBatchChange(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	repoAPIID := graphqlbackend.MarshalRepositoryID(repo.ID)
-
 	falsy := overridable.FromBoolOrString(false)
 	batchSpec := &btypes.BatchSpec{
 		RawSpec: ct.TestRawBatchSpec,
@@ -429,11 +424,8 @@ func TestApplyBatchChange(t *testing.T) {
 
 	changesetSpec := &btypes.ChangesetSpec{
 		BatchSpecID: batchSpec.ID,
-		Spec: &batcheslib.ChangesetSpec{
-			BaseRepository: string(repoAPIID),
-		},
-		RepoID: repo.ID,
-		UserID: userID,
+		BaseRepoID:  repo.ID,
+		UserID:      userID,
 	}
 	if err := cstore.CreateChangesetSpec(ctx, changesetSpec); err != nil {
 		t.Fatal(err)
