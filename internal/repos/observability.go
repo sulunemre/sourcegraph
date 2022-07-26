@@ -145,7 +145,6 @@ type StoreMetrics struct {
 	UpdateExternalServiceRepo          *metrics.REDMetrics
 	DeleteExternalServiceRepo          *metrics.REDMetrics
 	DeleteExternalServiceReposNotIn    *metrics.REDMetrics
-	UpdateRepo                         *metrics.REDMetrics
 	UpsertRepos                        *metrics.REDMetrics
 	UpsertSources                      *metrics.REDMetrics
 	ListExternalRepoSpecs              *metrics.REDMetrics
@@ -156,6 +155,7 @@ type StoreMetrics struct {
 	CountNotClonedRepos                *metrics.REDMetrics
 	CountNamespacedRepos               *metrics.REDMetrics
 	EnqueueSyncJobs                    *metrics.REDMetrics
+	EnqueueWebhookCreationJobs         *metrics.REDMetrics
 }
 
 // MustRegister registers all metrics in StoreMetrics in the given

@@ -5,6 +5,7 @@ import (
 
 	"github.com/opentracing/opentracing-go"
 
+	"github.com/sourcegraph/log"
 	"github.com/sourcegraph/log/logtest"
 
 	"github.com/sourcegraph/sourcegraph/internal/database"
@@ -24,8 +25,7 @@ func TestIntegration(t *testing.T) {
 		t.Skip()
 	}
 
-	logger := logtest.Scoped(t)
-	t.Parallel()
+	// t.Parallel()
 
 	for _, tc := range []struct {
 		name string
@@ -34,13 +34,14 @@ func TestIntegration(t *testing.T) {
 		{"SyncRateLimiters", testSyncRateLimiters},
 		{"EnqueueSyncJobs", testStoreEnqueueSyncJobs},
 		{"EnqueueSingleSyncJob", testStoreEnqueueSingleSyncJob},
+		{"EnqueueSingleWebhookBuildJob", testStoreEnqueueSingleWebhookBuildJob},
 		{"ListExternalServiceUserIDsByRepoID", testStoreListExternalServiceUserIDsByRepoID},
 		{"ListExternalServicePrivateRepoIDsByUserID", testStoreListExternalServicePrivateRepoIDsByUserID},
 		{"Syncer/SyncWorker", testSyncWorkerPlumbing},
 		{"Syncer/Sync", testSyncerSync},
-		{"Syncer/SyncRepo", testSyncRepo},
+		{"Syncer/SyncRepo", testSyncRepo}, // PROBLEM WITHOUT foreign key
 		{"Syncer/Run", testSyncRun},
-		{"Syncer/MultipleServices", testSyncerMultipleServices},
+		{"Syncer/MultipleServices", testSyncerMultipleServices}, // PROBLEM with syncer.go
 		{"Syncer/OrphanedRepos", testOrphanedRepo},
 		{"Syncer/CloudDefaultExternalServicesDontSync", testCloudDefaultExternalServicesDontSync},
 		{"Syncer/DeleteExternalService", testDeleteExternalService},
@@ -54,12 +55,37 @@ func TestIntegration(t *testing.T) {
 		{"Syncer/SyncReposWithLastErrorsHitRateLimit", testSyncReposWithLastErrorsHitsRateLimiter},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			store := repos.NewStore(logtest.Scoped(t), database.NewDB(logger, dbtest.NewDB(logger, t)))
+			store := repos.NewStore(logtest.Scoped(t), database.NewDB(dbtest.NewDB(t)))
 
 			store.SetMetrics(repos.NewStoreMetrics())
 			store.SetTracer(trace.Tracer{Tracer: opentracing.GlobalTracer()})
 
 			tc.test(store)(t)
+		})
+	}
+}
+
+func TestIntegration_WebhookBuilder(t *testing.T) {
+	if testing.Short() {
+		t.Skip()
+	}
+
+	// t.Parallel()
+
+	for _, tc := range []struct {
+		name string
+		test func(repos.Store, database.DB) func(*testing.T)
+	}{
+		{"WebhookBuilder", testWebhookBuilder},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			db := database.NewDB(dbtest.NewDB(log.Scoped(t)))
+			store := repos.NewStore(logtest.Scoped(t), db)
+
+			store.SetMetrics(repos.NewStoreMetrics())
+			store.SetTracer(trace.Tracer{Tracer: opentracing.GlobalTracer()})
+
+			tc.test(store, db)(t)
 		})
 	}
 }

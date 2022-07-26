@@ -2,27 +2,36 @@ package repos
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
+	"net/url"
 	"sort"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/thanhpk/randstr"
+	"github.com/tidwall/gjson"
 	"golang.org/x/sync/singleflight"
 
 	"github.com/sourcegraph/log"
 
+	"github.com/sourcegraph/sourcegraph/cmd/frontend/external/globals"
 	"github.com/sourcegraph/sourcegraph/internal/api"
 	"github.com/sourcegraph/sourcegraph/internal/conf"
 	"github.com/sourcegraph/sourcegraph/internal/database"
 	"github.com/sourcegraph/sourcegraph/internal/errcode"
 	"github.com/sourcegraph/sourcegraph/internal/extsvc"
+	"github.com/sourcegraph/sourcegraph/internal/extsvc/auth"
+	"github.com/sourcegraph/sourcegraph/internal/extsvc/github"
+	"github.com/sourcegraph/sourcegraph/internal/httpcli"
 	"github.com/sourcegraph/sourcegraph/internal/metrics"
 	"github.com/sourcegraph/sourcegraph/internal/trace"
 	"github.com/sourcegraph/sourcegraph/internal/types"
 	"github.com/sourcegraph/sourcegraph/internal/workerutil"
 	"github.com/sourcegraph/sourcegraph/lib/errors"
+	"github.com/sourcegraph/sourcegraph/schema"
 )
 
 // A Syncer periodically synchronizes available repositories from all its given Sources
@@ -80,7 +89,7 @@ func (s *Syncer) Run(ctx context.Context, store Store, opts RunOptions) error {
 		s.initialUnmodifiedDiffFromStore(ctx, store)
 	}
 
-	worker, resetter := NewSyncWorker(ctx, s.Logger.Scoped("syncWorker", ""), store.Handle(), &syncHandler{
+	syncWorker, syncResetter := NewSyncWorker(ctx, store.Handle(), &syncHandler{
 		syncer:          s,
 		store:           store,
 		minSyncInterval: opts.MinSyncInterval,
@@ -91,11 +100,28 @@ func (s *Syncer) Run(ctx context.Context, store Store, opts RunOptions) error {
 		CleanupOldJobs:       true,
 	})
 
-	go worker.Start()
-	defer worker.Stop()
+	go syncWorker.Start()
+	defer syncWorker.Stop()
 
-	go resetter.Start()
-	defer resetter.Stop()
+	go syncResetter.Start()
+	defer syncResetter.Stop()
+
+	whBuildWorker, whBuildResetter := NewWebhookBuildWorker(ctx, store.Handle(), &whBuildHandler{
+		store: store,
+		// userAccountsDB: store.With(),
+		minWhBuildInterval: opts.MinSyncInterval, // to change
+	}, WebhookBuildOptions{
+		WorkerInterval:       opts.DequeueInterval,
+		NumHandlers:          3,
+		PrometheusRegisterer: s.Registerer,
+		CleanupOldJobs:       true,
+	})
+
+	go whBuildWorker.Start()
+	defer whBuildWorker.Stop()
+
+	go whBuildResetter.Start()
+	defer whBuildResetter.Stop()
 
 	for ctx.Err() == nil {
 		if !conf.Get().DisableAutoCodeHostSyncs {
@@ -123,6 +149,72 @@ func (s *syncHandler) Handle(ctx context.Context, logger log.Logger, record work
 	}
 
 	return s.syncer.SyncExternalService(ctx, sj.ExternalServiceID, s.minSyncInterval())
+}
+
+type whBuildHandler struct {
+	store              Store
+	minWhBuildInterval func() time.Duration
+}
+
+func (wb *whBuildHandler) Handle(ctx context.Context, logger log.Logger, record workerutil.Record) (err error) {
+	wbj, ok := record.(*WebhookBuildJob)
+	if !ok {
+		return errors.Errorf("expected repos.WhBuildJob, got %T", record)
+	}
+
+	switch wbj.ExtSvcKind {
+	case "GITHUB":
+		svcs, err := wb.store.ExternalServiceStore().List(ctx, database.ExternalServicesListOptions{}) // some namespace
+		if err != nil || len(svcs) != 1 {
+			return errors.Wrap(err, "get external service")
+		}
+		svc := svcs[0]
+
+		baseURL, err := url.Parse(gjson.Get(svc.Config, "url").String())
+		if err != nil {
+			return errors.Wrap(err, "parse base URL")
+		}
+
+		accounts, err := wb.store.UserExternalAccountsStore().List(ctx, database.ExternalAccountsListOptions{})
+		if err != nil {
+			return errors.Wrap(err, "get accounts")
+		}
+
+		_, token, err := github.GetExternalAccountData(&accounts[0].AccountData)
+		if err != nil {
+			return errors.Wrap(err, "get token")
+		}
+
+		cf := httpcli.ExternalClientFactory
+		opts := []httpcli.Opt{}
+		cli, err := cf.Doer(opts...)
+		if err != nil {
+			return errors.Wrap(err, "create client")
+		}
+
+		client := github.NewV3Client(logger, svc.URN(), baseURL, &auth.OAuthBearerToken{Token: token.AccessToken}, cli)
+		gh := NewGitHubWebhookAPI(client)
+
+		id, err := gh.FindSyncWebhook(ctx, wbj.RepoName)
+		if err != nil {
+			return err
+		}
+		secret := randstr.Hex(32)
+
+		if err := addSecretToExtSvc(svc, "someOrg", secret); err != nil {
+			return errors.Wrap(err, "add secret to External Service")
+		}
+
+		id, err = gh.CreateSyncWebhook(ctx, wbj.RepoName, globals.ExternalURL().Host, secret)
+		if err != nil {
+			return errors.Wrap(err, "create webhook")
+		}
+		fmt.Println("ID:", id)
+	}
+
+	// how will we know if a repo has been deleted?
+
+	return nil // to change
 }
 
 // sleep is a context aware time.Sleep
@@ -208,7 +300,7 @@ func (s *Syncer) initialUnmodifiedDiffFromStore(ctx context.Context, store Store
 type Diff struct {
 	Added      types.Repos
 	Deleted    types.Repos
-	Modified   ReposModified
+	Modified   types.Repos
 	Unmodified types.Repos
 }
 
@@ -217,7 +309,7 @@ func (d *Diff) Sort() {
 	for _, ds := range []types.Repos{
 		d.Added,
 		d.Deleted,
-		d.Modified.Repos(),
+		d.Modified,
 		d.Unmodified,
 	} {
 		sort.Sort(ds)
@@ -234,7 +326,7 @@ func (d Diff) Repos() types.Repos {
 	for _, rs := range []types.Repos{
 		d.Added,
 		d.Deleted,
-		d.Modified.Repos(),
+		d.Modified,
 		d.Unmodified,
 	} {
 		all = append(all, rs...)
@@ -245,38 +337,6 @@ func (d Diff) Repos() types.Repos {
 
 func (d Diff) Len() int {
 	return len(d.Deleted) + len(d.Modified) + len(d.Added) + len(d.Unmodified)
-}
-
-// RepoModified tracks the modifications applied to a single repository after a
-// sync.
-type RepoModified struct {
-	Repo     *types.Repo
-	Modified types.RepoModified
-}
-
-type ReposModified []RepoModified
-
-// Repos returns all modified repositories.
-func (rm ReposModified) Repos() types.Repos {
-	repos := make(types.Repos, len(rm))
-	for i := range rm {
-		repos[i] = rm[i].Repo
-	}
-
-	return repos
-}
-
-// ReposModified returns only the repositories that had a specific field
-// modified in the sync.
-func (rm ReposModified) ReposModified(modified types.RepoModified) types.Repos {
-	repos := types.Repos{}
-	for _, pair := range rm {
-		if pair.Modified&modified == modified {
-			repos = append(repos, pair.Repo)
-		}
-	}
-
-	return repos
 }
 
 // SyncRepo syncs a single repository by name and associates it with an external service.
@@ -565,7 +625,7 @@ func (s *Syncer) SyncExternalService(
 	// Organization owned external services are always considered allowed.
 	allowed := func(*types.Repo) bool { return true }
 	if svc.NamespaceUserID != 0 {
-		if mode, err := database.UsersWith(s.Logger, s.Store).UserAllowedExternalServices(ctx, svc.NamespaceUserID); err != nil {
+		if mode, err := database.UsersWith(s.Store).UserAllowedExternalServices(ctx, svc.NamespaceUserID); err != nil {
 			return errors.Wrap(err, "checking if user can add private code")
 		} else if mode != conf.ExternalServiceModeAll {
 			allowed = func(r *types.Repo) bool { return !r.Private }
@@ -614,12 +674,12 @@ func (s *Syncer) SyncExternalService(
 		if !allowed(sourced) {
 			continue
 		}
+		// fmt.Printf("sourced:%+v\n", sourced)
 
 		var diff Diff
 		if diff, err = s.sync(ctx, svc, sourced); err != nil {
 			logger.Error("failed to sync, skipping", log.String("repo", string(sourced.Name)), log.Error(err))
 			errs = errors.Append(errs, err)
-
 			// Stop syncing this external service as soon as we know repository limits for user or
 			// site level has been exceeded. We want to avoid generating spurious errors here
 			// because all subsequent syncs will continue failing unless the limits are increased.
@@ -628,6 +688,17 @@ func (s *Syncer) SyncExternalService(
 			}
 
 			continue
+		}
+
+		if conf.Get() != nil && conf.Get().ExperimentalFeatures != nil {
+			svc.SyncUsingWebhooks = conf.Get().ExperimentalFeatures.EnableWebhookSyncing
+		}
+		if svc.SyncUsingWebhooks {
+			// fmt.Println("Syncing...")
+			err = s.Store.EnqueueSingleWhBuildJob(ctx, int64(sourced.ID), string(sourced.Name), svc.Kind)
+			if err != nil && s.Logger != nil {
+				s.Logger.Error("enqueue webhook creation jobs", log.Error(err))
+			}
 		}
 
 		for _, r := range diff.Repos() {
@@ -752,8 +823,7 @@ func (s *Syncer) sync(ctx context.Context, svc *types.ExternalService, sourced *
 		stored = types.Repos{existing}
 		fallthrough
 	case 1: // Existing repo, update.
-		modified := stored[0].Update(sourced)
-		if modified == types.RepoUnmodified {
+		if !stored[0].Update(sourced) {
 			d.Unmodified = append(d.Unmodified, stored[0])
 			break
 		}
@@ -763,7 +833,7 @@ func (s *Syncer) sync(ctx context.Context, svc *types.ExternalService, sourced *
 		}
 
 		*sourced = *stored[0]
-		d.Modified = append(d.Modified, RepoModified{Repo: stored[0], Modified: modified})
+		d.Modified = append(d.Modified, stored[0])
 	case 0: // New repo, create.
 		if !svc.IsSiteOwned() { // enforce user and org repo limits
 			siteAdded, err := tx.CountNamespacedRepos(ctx, 0, 0)
@@ -816,7 +886,7 @@ func (s *Syncer) delete(ctx context.Context, svc *types.ExternalService, seen ma
 func observeDiff(diff Diff) {
 	for state, repos := range map[string]types.Repos{
 		"added":      diff.Added,
-		"modified":   diff.Modified.Repos(),
+		"modified":   diff.Modified,
 		"deleted":    diff.Deleted,
 		"unmodified": diff.Unmodified,
 	} {
@@ -911,4 +981,26 @@ func syncErrorReason(err error) string {
 	default:
 		return "unknown"
 	}
+}
+
+func addSecretToExtSvc(svc *types.ExternalService, org, secret string) error {
+	var config schema.GitHubConnection
+	err := json.Unmarshal([]byte(svc.Config), &config)
+	if err != nil {
+		return errors.Wrap(err, "unmarshal config")
+	}
+
+	config.Webhooks = append(config.Webhooks, &schema.GitHubWebhook{
+		Org: org, Secret: secret,
+	})
+
+	newConfig, err := json.Marshal(config)
+	if err != nil {
+		return errors.Wrap(err, "marshal config")
+	}
+
+	svc.Config = string(newConfig)
+	fmt.Println("svc:", svc)
+
+	return nil
 }
