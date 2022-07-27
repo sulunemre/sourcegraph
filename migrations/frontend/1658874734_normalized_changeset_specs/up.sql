@@ -7,3 +7,4 @@ ALTER TABLE changeset_specs ADD COLUMN IF NOT EXISTS commit_message TEXT;
 ALTER TABLE changeset_specs ADD COLUMN IF NOT EXISTS commit_author_name TEXT;
 ALTER TABLE changeset_specs ADD COLUMN IF NOT EXISTS commit_author_email TEXT;
 ALTER TABLE changeset_specs ADD COLUMN IF NOT EXISTS type TEXT;
+ALTER TABLE changeset_specs ADD COLUMN IF NOT EXISTS migrated BOOLEAN NOT NULL DEFAULT FALSE;
