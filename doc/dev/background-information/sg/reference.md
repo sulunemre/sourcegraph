@@ -648,6 +648,25 @@ Flags:
 * `--up`: The migration direction.
 * `--version="<value>"`: The migration `version` to log. (default: 0)
 
+### sg migration upgrade
+
+TODO.
+
+Available schemas:
+
+* frontend
+* codeintel
+* codeinsights
+
+```sh
+$ sg migration upgrades -from=<version> -to=<version>
+```
+
+Flags:
+
+* `--from="<value>"`: The source instance version. TODO
+* `--to="<value>"`: The target instance version. TODO
+
 ### sg migration leaves
 
 Identiy the migration leaves for the given commit.

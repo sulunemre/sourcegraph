@@ -5,6 +5,7 @@ import (
 	"strconv"
 
 	"github.com/sourcegraph/sourcegraph/internal/lazyregexp"
+	"github.com/sourcegraph/sourcegraph/lib/errors"
 )
 
 type Version struct {
@@ -21,6 +22,7 @@ func NewVersion(major, minor int) Version {
 
 var versionPattern = lazyregexp.New(`^v?(\d+)\.(\d+)(?:\.\d+)?$`)
 
+// TODO - document
 func NewVersionFromString(v string) (Version, bool) {
 	if matches := versionPattern.FindStringSubmatch(v); len(matches) >= 3 {
 		major, _ := strconv.Atoi(matches[1])
@@ -36,6 +38,38 @@ func (v Version) String() string {
 	return fmt.Sprintf("%d.%d", v.Major, v.Minor)
 }
 
+func (v Version) GitTag() string {
+	return fmt.Sprintf("v%d.%d.0", v.Major, v.Minor)
+}
+
+// TODO - document
+func MakeUpgradeRange(from, to Version) ([]Version, error) {
+	if CompareVersions(from, to) == VersionOrderAfter {
+		return nil, errors.Newf("invalid range (from=%s > to=%s)", from, to)
+	}
+
+	var versions []Version
+	for v := from; CompareVersions(v, to) != VersionOrderAfter; v = bump(v) {
+		versions = append(versions, v)
+	}
+
+	return versions, nil
+}
+
+// TODO - update
+var lastInSeries = map[int]int{
+	3: 47, // 3.47.0 -> 4.0.0
+}
+
+// TODO - document
+func bump(v Version) Version {
+	if lastInSeries[v.Major] == v.Minor {
+		return NewVersion(v.Major+1, 0)
+	}
+
+	return NewVersion(v.Major, v.Minor+1)
+}
+
 type VersionOrder int
 
 const (
@@ -44,8 +78,8 @@ const (
 	VersionOrderAfter
 )
 
-// compareVersions returns the relationship between `a (op) b`.
-func compareVersions(a, b Version) VersionOrder {
+// CompareVersions returns the relationship between `a (op) b`.
+func CompareVersions(a, b Version) VersionOrder {
 	for _, pair := range [][2]int{
 		{a.Major, b.Major},
 		{a.Minor, b.Minor},
@@ -63,5 +97,5 @@ func compareVersions(a, b Version) VersionOrder {
 
 // pointIntersectsInterval returns true if point falls within the interval [lower, upper].
 func pointIntersectsInterval(lower, upper, point Version) bool {
-	return compareVersions(point, lower) != VersionOrderBefore && compareVersions(upper, point) != VersionOrderBefore
+	return CompareVersions(point, lower) != VersionOrderBefore && CompareVersions(upper, point) != VersionOrderBefore
 }

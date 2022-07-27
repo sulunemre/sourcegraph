@@ -71,6 +71,7 @@ func mainErr(ctx context.Context, args []string) error {
 			cliutil.Describe(appName, runnerFactory, outputFactory),
 			cliutil.Drift(appName, runnerFactory, outputFactory, cliutil.GCSExpectedSchemaFactory, cliutil.GitHubExpectedSchemaFactory),
 			cliutil.AddLog(logger, appName, runnerFactory, outputFactory),
+			cliutil.Upgrade(logger, appName, runnerFactory, outputFactory),
 		},
 	}
 
